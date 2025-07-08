@@ -158,42 +158,59 @@
     }
 
     /**
-     * Procura por elementos que pareçam ser logos no HTML original e os oculta,
-     * para evitar conflito com a logo injetada pelo painel.
+     * Versão Aprimorada: Procura por elementos que pareçam ser logos no HTML 
+     * e os oculta de forma agressiva para evitar conflito com a logo injetada.
      */
     function hideExistingLogos() {
-        // Lista de IDs de logos que NÃO devem ser escondidas (a nossa e outras conhecidas).
+        // IDs de logos que NÃO devem ser escondidas (a nossa e outras conhecidas).
         const protectedLogoIds = ['panel-injected-logo', 'appLogoImageNewUI'];
 
-        // Seleciona todos os elementos que possam ser uma logo com base no ID ou classe.
-        const potentialLogos = document.querySelectorAll('[id*="logo"], [class*="logo"]');
+        // Seletor CSS abrangente e case-insensitive para encontrar qualquer coisa que pareça uma logo.
+        // Procura 'logo' em id, class, e para tags <img>, em src e alt.
+        const selector = '[id*="logo" i], [class*="logo" i], img[src*="logo" i], img[alt*="logo" i]';
+        
+        try {
+            const potentialLogos = document.querySelectorAll(selector);
 
-        potentialLogos.forEach(logo => {
-            // Verifica se o ID do elemento encontrado está na nossa lista de proteção.
-            if (!protectedLogoIds.includes(logo.id)) {
-                // Se não estiver protegido, oculta o elemento.
-                logo.style.display = 'none';
-            }
-        });
+            potentialLogos.forEach(logo => {
+                // Verifica se a logo encontrada não é uma das nossas.
+                if (!protectedLogoIds.includes(logo.id)) {
+                    // Se não for, força a invisibilidade.
+                    // Usar setProperty com '!important' é a forma mais robusta de garantir
+                    // que nosso estilo será aplicado, sobrepondo outros.
+                    logo.style.setProperty('display', 'none', 'important');
+                }
+            });
+        } catch (e) {
+            console.error("Painel: Erro ao tentar ocultar logos existentes.", e);
+        }
     }
 
     async function processConfig(config) {
         if (!config) return;
         if (config?.security?.status === true && config.security.dtunnelId) {
             const isAuthorized = await verifyDtunnelId(config.security.dtunnelId);
-            if (!isAuthorized) { showModal({ isPersistent: true, title: 'Uso não permitido', message: 'Adquira este layout de forma autorizada com Big Panther', icon: 'fas fa-shield-alt' }); return; }
+            if (!isAuthorized) { showModal({ isPersistent: true, title: 'Uso não permitido', message: 'Adquira este layout de forma autorizada.', icon: 'fas fa-shield-alt' }); return; }
         }
 
-        // CHAMA A FUNÇÃO DE LIMPEZA ANTES DE APLICAR AS NOVAS CONFIGURAÇÕES
+        // Primeiro, limpa o terreno escondendo logos antigas.
         hideExistingLogos();
 
+        // Depois, aplica nossas configurações.
         applyCustomBackground(config.uiCustomization);
         applyLogo(config.logoConfig);
+        
         const tempUsersConfig = config.tempUsers;
         if (tempUsersConfig && tempUsersConfig.globalStatus === true) {
-            if (isAuthenticatedForThisSession) { runMainChecks(config); return; }
-            if (validateCachedCredential(config)) { runMainChecks(config); } else { localStorage.removeItem(CACHE_CREDENTIAL_KEY); showTempUserLogin(tempUsersConfig.users, () => runMainChecks(config)); }
-        } else { runMainChecks(config); }
+            if (isAuthenticatedForThisSession || validateCachedCredential(config)) {
+                runMainChecks(config); 
+            } else {
+                localStorage.removeItem(CACHE_CREDENTIAL_KEY);
+                showTempUserLogin(tempUsersConfig.users, () => runMainChecks(config)); 
+            }
+        } else { 
+            runMainChecks(config); 
+        }
     }
 
     // A função principal que inicia tudo
@@ -205,6 +222,7 @@
         
         await loadStylesheet("https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css");
         
+        // Tenta processar com dados do cache primeiro para uma resposta rápida
         try {
             const cachedConfig = JSON.parse(localStorage.getItem(CACHE_CONFIG_KEY));
             if (cachedConfig) { await processConfig(cachedConfig); }
@@ -212,6 +230,7 @@
              // Cache inválido ou inexistente, pode ser ignorado.
         }
         
+        // Em paralelo, busca os dados mais recentes do Firebase
         try {
             const firebaseConfig = { apiKey: "AIzaSyAtx7xW7wASM1buR_5p_WcCRWEAqSUiRJI", authDomain: "painel-7fb32.firebaseapp.com", databaseURL: "https://painel-7fb32-default-rtdb.firebaseio.com", projectId: "painel-7fb32" };
             if (!window.firebase?.app) {
@@ -229,6 +248,7 @@
                 } catch(e) {
                     console.warn("Não foi possível salvar a configuração no cache.");
                 }
+                // Processa a configuração remota (a mais atual)
                 processConfig(remoteConfig);
             });
         } catch (error) {
