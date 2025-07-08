@@ -157,12 +157,36 @@
         });
     }
 
+    /**
+     * Procura por elementos que pareçam ser logos no HTML original e os oculta,
+     * para evitar conflito com a logo injetada pelo painel.
+     */
+    function hideExistingLogos() {
+        // Lista de IDs de logos que NÃO devem ser escondidas (a nossa e outras conhecidas).
+        const protectedLogoIds = ['panel-injected-logo', 'appLogoImageNewUI'];
+
+        // Seleciona todos os elementos que possam ser uma logo com base no ID ou classe.
+        const potentialLogos = document.querySelectorAll('[id*="logo"], [class*="logo"]');
+
+        potentialLogos.forEach(logo => {
+            // Verifica se o ID do elemento encontrado está na nossa lista de proteção.
+            if (!protectedLogoIds.includes(logo.id)) {
+                // Se não estiver protegido, oculta o elemento.
+                logo.style.display = 'none';
+            }
+        });
+    }
+
     async function processConfig(config) {
         if (!config) return;
         if (config?.security?.status === true && config.security.dtunnelId) {
             const isAuthorized = await verifyDtunnelId(config.security.dtunnelId);
             if (!isAuthorized) { showModal({ isPersistent: true, title: 'Uso não permitido', message: 'Adquira este layout de forma autorizada com Big Panther', icon: 'fas fa-shield-alt' }); return; }
         }
+
+        // CHAMA A FUNÇÃO DE LIMPEZA ANTES DE APLICAR AS NOVAS CONFIGURAÇÕES
+        hideExistingLogos();
+
         applyCustomBackground(config.uiCustomization);
         applyLogo(config.logoConfig);
         const tempUsersConfig = config.tempUsers;
