@@ -65,9 +65,6 @@
         passwordInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') attemptLogin(); });
     }
     
-    // =========================================================================
-    //                      FUNÇÃO DO MODAL CORRIGIDA
-    // =========================================================================
     async function showModal(modalData) {
         const { title, message, button, isPersistent, colors, icon: iconClass, audioUrl, isSingleView, imageUrl } = modalData;
         const logoEl = document.getElementById('panel-injected-logo') || document.getElementById('appLogoImageNewUI');
@@ -75,7 +72,6 @@
         if (isSingleView) { const noticeId = 'panel_seen_' + (title || '') + '_' + (message || '') + '_' + (audioUrl || ''); try { if (localStorage.getItem(noticeId) === 'true') return; } catch (e) {} }
         const existingModal = document.querySelector('.custom-modal-overlay'); if (existingModal) existingModal.remove();
         
-        // <<< MUDANÇA PRINCIPAL AQUI (CSS) >>>
         const modalStyles = '.custom-modal-overlay{position:fixed;inset:0;background-color:rgba(0,0,0,.9);z-index:2147483647;display:flex;justify-content:center;align-items:center;padding:1rem;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}.custom-modal-content{position:relative;background-color:#fff;color:#333;padding:2em;border-radius:12px;text-align:center;max-width:450px;width:100%;box-shadow:0 10px 30px rgba(0,0,0,.5);animation:custom-modal-fadein .3s ease;max-height:80vh;display:flex;flex-direction:column;overflow-y:auto;}@keyframes custom-modal-fadein{from{opacity:0;transform:scale(.9)}to{opacity:1;transform:scale(1)}}.custom-modal-icon{font-size:3em;line-height:1;margin-bottom:.25em;display:block}.custom-modal-title{font-size:1.5em;font-weight:700;margin:.5em 0;word-wrap:break-word;}.custom-modal-message{font-size:1em;line-height:1.6;overflow-wrap:break-word;word-break:break-all;}.custom-modal-button{display:inline-block;margin-top:1.5em;padding:12px 24px;text-decoration:none;font-weight:700;border-radius:50px;transition:background-color .2s,transform .2s;flex-shrink:0;}.custom-modal-button:hover{transform:scale(1.05)}.custom-modal-close-btn{position:absolute;top:10px;right:15px;font-size:2.5em;color:#aaa;cursor:pointer;line-height:1;transition:color .2s;border:none;background:0 0}.custom-modal-close-btn:hover{color:#333}';
         
         const styleSheet = document.createElement("style"); styleSheet.innerText = modalStyles; document.head.appendChild(styleSheet);
@@ -134,10 +130,12 @@
         }
     }
 
+    // =========================================================================
+    //                      FUNÇÃO DE SUBSTITUIÇÃO CORRIGIDA
+    // =========================================================================
     function applyTextReplacements(replacements) {
-        if (!replacements || Object.keys(replacements).length === 0) {
-            return;
-        }
+        if (!replacements || Object.keys(replacements).length === 0) return;
+
         const lookupMap = {};
         for (const key in replacements) {
             const item = replacements[key];
@@ -147,18 +145,48 @@
         }
         if (Object.keys(lookupMap).length === 0) return;
 
-        const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
-        let node;
-        const nodesToReplace = [];
-
-        while (node = walker.nextNode()) {
-            const originalText = node.nodeValue.trim();
-            if (lookupMap[originalText]) {
-                nodesToReplace.push({ node: node, newText: lookupMap[originalText] });
+        const performReplacementOnNode = (rootNode) => {
+            // Apenas processa nós de elemento, pois o TreeWalker encontrará os nós de texto dentro deles.
+            if (rootNode.nodeType !== Node.ELEMENT_NODE && rootNode.nodeType !== Node.DOCUMENT_FRAGMENT_NODE) {
+                return;
             }
-        }
-        nodesToReplace.forEach(item => {
-            item.node.nodeValue = item.newText;
+            
+            const walker = document.createTreeWalker(rootNode, NodeFilter.SHOW_TEXT, null, false);
+            const nodesToChange = [];
+            let textNode;
+
+            while ((textNode = walker.nextNode())) {
+                const originalText = textNode.nodeValue.trim();
+                if (lookupMap[originalText]) {
+                    // Preserva os espaços em branco ao redor substituindo apenas a parte do texto.
+                    const newText = textNode.nodeValue.replace(originalText, lookupMap[originalText]);
+                    nodesToChange.push({ node: textNode, text: newText });
+                }
+            }
+            // Aplica todas as alterações após o loop para evitar modificar o DOM durante a iteração.
+            nodesToChange.forEach(change => {
+                change.node.nodeValue = change.text;
+            });
+        };
+
+        // 1. Execução inicial em todo o corpo para substituir o texto estático.
+        performReplacementOnNode(document.body);
+
+        // 2. Usa o MutationObserver para capturar qualquer texto injetado por JS após o carregamento inicial.
+        const observer = new MutationObserver((mutationsList) => {
+            for (const mutation of mutationsList) {
+                if (mutation.type === 'childList') {
+                    mutation.addedNodes.forEach(addedNode => {
+                        performReplacementOnNode(addedNode);
+                    });
+                }
+            }
+        });
+
+        // Começa a observar o corpo em busca de elementos filhos adicionados, incluindo toda a subárvore.
+        observer.observe(document.body, {
+            childList: true,
+            subtree: true,
         });
     }
 
